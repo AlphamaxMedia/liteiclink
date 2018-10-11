@@ -9,6 +9,7 @@ from liteiclink.transceiver.clock_aligner import BruteforceClockAligner
 
 from liteiclink.transceiver.prbs import *
 
+from migen.genlib.cdc import PulseSynchronizer
 
 class GTPQuadPLL(Module):
     def __init__(self, refclk, refclk_freq, linerate):
@@ -111,6 +112,9 @@ class GTP(Module, AutoCSR):
         self.rx_prbs_config = CSRStorage(2)
         self.rx_prbs_errors = CSRStatus(32)
 
+        self.rx_gtp_prbs_cntreset = CSRStorage(1)
+        self.rx_gtp_prbs_err = CSRStatus(1)
+
         # # #
 
         self.submodules.encoder = ClockDomainsRenamer("tx")(
@@ -170,9 +174,10 @@ class GTP(Module, AutoCSR):
             8 : 0x0000107FE086001041010
         }
 
-        txdata = Signal(20)
-        rxdata = Signal(20)
-        rxphaligndone = Signal()
+        self.txdata = txdata = Signal(20)
+        self.rxdata = rxdata = Signal(20)
+        self.rxphaligndone = rxphaligndone = Signal()
+        self.realtimeerr = Signal()
         self.specials += \
             Instance("GTPE2_CHANNEL",
                 i_GTRESETSEL=0,
@@ -241,8 +246,9 @@ class GTP(Module, AutoCSR):
                 i_TXDATA=Cat(txdata[:8], txdata[10:18]),
                 i_TXUSRCLK=ClockSignal("tx"),
                 i_TXUSRCLK2=ClockSignal("tx"),
+                i_TXPRBSSEL=0b010, # for PRBS to work???
 
-                # TX electrical
+                     # TX electrical
                 i_TXBUFDIFFCTRL=0b100,
                 i_TXDIFFCTRL=0b1000,
 
@@ -295,6 +301,9 @@ class GTP(Module, AutoCSR):
                 o_RXDISPERR=Cat(rxdata[9], rxdata[19]),
                 o_RXCHARISK=Cat(rxdata[8], rxdata[18]),
                 o_RXDATA=Cat(rxdata[:8], rxdata[10:18]),
+                i_RXPRBSSEL=0b010,
+                i_RXPRBSCNTRESET=self.rx_gtp_prbs_cntreset.storage,
+                o_RXPRBSERR=self.realtimeerr,
 
                 # Polarity
                 i_TXPOLARITY=tx_polarity,
@@ -306,6 +315,10 @@ class GTP(Module, AutoCSR):
                 o_GTPTXP=tx_pads.p,
                 o_GTPTXN=tx_pads.n
             )
+
+        self.specials += [
+            MultiReg(self.realtimeerr, self.rx_gtp_prbs_err.status, "sys")
+        ]
 
         # tx clocking
         tx_reset_deglitched = Signal()
