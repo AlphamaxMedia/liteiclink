@@ -115,7 +115,10 @@ class GTP(Module, AutoCSR):
         self.rx_gtp_prbs_cntreset = CSRStorage(1)
         self.rx_gtp_prbs_err = CSRStatus(1)
 
+        self.pll_lock = CSRStatus(1)
+
         # # #
+        self.comb += self.pll_lock.status.eq(qpll.lock)
 
         self.submodules.encoder = ClockDomainsRenamer("tx")(
             Encoder(2, True))
